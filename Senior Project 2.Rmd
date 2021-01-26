@@ -1,0 +1,684 @@
+---
+title: "Senior Project: Real Estate Listings Price Prediction"
+author: "Kelsey Dinndorf"
+date: "January 26, 2021"
+output: 
+ word_document:
+  toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+Motivation: 
+There is a lot of variation in the prices of real estate, and it is often difficult to know whether or not you are paying a fair price for a house. It is often difficult for people to know if the real estate price listed online truly reflects the value of the house, especially for people who do not know much about real estate. This uncertainty is even more frustrating in a pandemic. I am interested in uncovering the factors that contribute most to the price of a house and how that price is determined. I aim to help inform people more about what contributes to the prices of real estate.
+
+Goal: Implement a Multiple Linear Regression Model to predict price and determine which factors are most significant in deciding the price of a house.
+
+# Data
+
+Real Estate Data:
+
+* Pre-processed data found on Kaggle’s website
+
+* Scraped from Trulia, a subsidiary of Zillow, in 2019
+
+* Contains various real estate listings from multiple cities/states in the United States
+
+* 68 attributes including price, size, location, style, year built, features, years listed on Trulia, and more. 
+
+* Includes 30,000 records of real estate listings.
+
+Crime Data:
+
+* Obtained from the FBI Uniform Crime Reporting (UCR) Program
+
+* Includes the total number of known violent crimes and property crimes for each city in 2019
+
+
+# Exploratory Analysis of the Data
+
+```{r}
+# Note: This data was cleaned in Python. This report is a continuation of the project which I began in Python Jupyter Notebook.
+
+# Read in the data
+housing2 <- read.csv("~/Luther College Year 4/Senior Project/Zscoredf.csv")
+
+View(housing2)
+head (housing2)
+```
+
+## Rename columns:
+
+```{r}
+#Rename columns
+colnames(housing2)[1]  <- "Price"
+colnames(housing2)[2]  <- "Size" #in square feet
+colnames(housing2)[3]  <- "Bedrooms"
+colnames(housing2)[4]  <- "Bathrooms"
+colnames(housing2)[5]  <- "Year_Built"
+colnames(housing2)[6]  <- "Days_On_Trulia"
+colnames(housing2)[7]  <- "Lot_Size" #in square feet
+colnames(housing2)[8]  <- "Price_per_sqft"
+colnames(housing2)[9]  <- "Population"
+colnames(housing2)[10]  <- "Violent_Crime_Rate"
+colnames(housing2)[11]  <- "Property_Crime_Rate"
+colnames(housing2)[12]  <- "City"
+colnames(housing2)[13]  <- "State"
+
+head(housing2)
+dim(housing2)   #Shows data dimension
+
+```
+
+There are 21,912 rows and 13 columns in the dataset.
+
+```{r}
+#Check for missing values
+any(is.na(housing2))
+```
+
+No missing values.
+
+## Check for Skewness and Outliers in 'Price'
+
+```{r fig.height=3.5, fig.width=7.5}
+par (mfrow = c(1, 2))
+
+hist (housing2$Price, xlab="Price", main="Histogram of Price")
+boxplot (housing2$Price, horizontal = T, xlab="Price", main="Boxplot of Price")
+
+```
+
+The price data is very right skewed. It would probably be beneficial to use a log transformation.
+
+
+## Check distributions of the quantitative predictor variables:
+
+```{r}
+library (tidyr)
+library (ggplot2)
+
+#Histograms
+ggplot(gather(housing2 [, 1:11]), aes(value)) + 
+  geom_histogram(bins = 8) + 
+  facet_wrap(~key, scales = 'free_x')
+```
+
+It looks like price, lot size, population, size, and price per sqft are all skewed right. Number of bathrooms and violent crime rate are slightly skewed right as well. Year Built is slightly skewed left.
+
+
+
+## Scatterplots and correlation between predictor variables
+
+```{r fig.height=6, fig.width=7.5}
+#scatterplot between some variables
+plot (housing2[ ,1:11]) #Color shows 
+```
+
+#### Heat Map for Correlation
+
+```{r}
+transcorr = cor(housing2 [, 1:11], use= "complete.obs")
+# c(1, 4:5, 8, 10)
+library("corrplot")
+## corrplot 0.84 loaded
+corrplot (transcorr, method = "number", number.cex=0.55)
+```
+
+
+#### Categorical variables:
+
+* City
+
+* State
+
+#### Correlation:
+
+```{r}
+#Correlation for quantitative predictor variables
+cormat = cor (housing2 [, 1:11], use = "complete.obs")
+round (cormat, 2)
+```
+
+High correlations with the response variable, price:
+- price per sqft (0.57)
+- bathrooms (0.52)
+- bedrooms (0.25)
+- violent crime rate (-0.16)
+
+High correlations between predictor variables:
+- bedrooms and bathrooms (0.59)
+- bathrooms and year built (0.29)
+- violent crime rate and year built (-0.30)
+- property crime rate and violent crime rate (0.62)
+- violent crime rate and population (0.25)
+
+Note: Crime rates are based on the population.
+Price per square foot should not be used becuase it takes into account the price.
+
+Variables to most likely use in model: Size, Bedrooms, Bathrooms, Year_Built, Lot_Size, Violent Crime Rate, City
+
+# Simple Linear Regression with one Predictor Variable (Bathrooms)
+
+```{r fig.height=3.5, fig.width=4}
+
+plot (Price ~ Bathrooms, data=housing2)
+#fit the model
+fit0 = lm (Price ~ Bathrooms, data=housing2)
+
+summary (fit0)
+confint (fit0)  #confidence interval
+abline (fit0)
+```
+
+The R-squared is 0.269. This means that the number of bathrooms explains about 27% of the variation in the price of the real estate. The residual standard error is $440,600.
+
+### Residual Analysis
+
+```{r fig.height=3.5, fig.width=7}
+par (mfrow = c(1,2))
+plot (fit0, which=1:2)
+```
+
+The Normal Q-Q plot shows that the data is not Normal. It is very much skewed to the right.
+
+# First Order Multiple Linear Regression Model
+
+Next, we fit a first-order linear model with all quantitative predictors.
+
+```{r}
+
+fit1 = lm ((Price) ~ Size + Bedrooms + Bathrooms + Year_Built + Lot_Size + Price_per_sqft + Population + Violent_Crime_Rate + Property_Crime_Rate,  data=housing2)
+summary (fit1)
+anova (fit1)
+```
+
+Adjusted R-squared: 0.565. All variables are significant. Property Crime Rate is the least significant in this model.
+
+#### Variance Inflation Factors
+
+```{r}
+car::vif(fit1)
+```
+
+Since all of the variance inflation factors are less than 5, we do not need to worry about multicollinearity. 
+
+Box-Cox Analysis:
+
+Box-Cox analysis is one way to choose a response variable transformation from the set of power transformations.  It can also just help choose between log, square root, and squaring.
+
+```{r}
+library ("MASS")
+boxcox (fit1)
+```
+
+Since the peak is close to 1/2, this suggests a log transformation of the response variable, Price.
+
+
+### Log Transfomation of Price
+
+```{r fig.height=3.5, fig.width=7.5}
+#Define LogPrice variable
+housing2$LogPrice = log(housing2$Price)
+```
+
+Plot the distribution of Log(Price)
+```{r}
+par (mfrow = c(1, 2))
+# histogram and boxplot for log of price
+hist (housing2$LogPrice, xlab="Log(Price)", main="Histogram of Log(Price)")
+boxplot (housing2$LogPrice, horizontal = T, xlab="Log(Price)", main="Boxplot of Log(Price)")
+
+```
+
+The data has more of a Normal distribution. There are still a few outliers at the lower end of the data.
+
+Get rid of outliers where Log of Price is less than 8.
+```{r}
+housing2 = housing2[housing2$LogPrice >= 8, ]
+
+#Check data dimension
+dim(housing2)
+```
+
+```{r}
+par (mfrow = c(1, 2))
+# histogram and boxplot for log of price
+hist (housing2$LogPrice, xlab="Log(Price)", main="Histogram of Log(Price)")
+boxplot (housing2$LogPrice, horizontal = T, xlab="Log(Price)", main="Boxplot of Log(Price)")
+
+```
+
+#### Fit a Model with Log(Price):
+
+```{r}
+fit2 = lm ((LogPrice) ~ Size + Bedrooms + Bathrooms + Year_Built + Lot_Size + Price_per_sqft + Population + Violent_Crime_Rate + Property_Crime_Rate,  data=housing2)
+summary (fit2)
+anova (fit2)
+```
+
+Adjusted R-squared: 0.562. This is a little bit of a decrease from the previous model. All variables are significant.
+
+## Check for Outliers in Predictor Variables
+
+Bathrooms:
+```{r fig.height=3.5, fig.width=7.5}
+par (mfrow = c(1, 2))
+
+hist (housing2$Bathrooms, xlab="Number of Bathrooms", main="Histogram of Bathrooms")
+boxplot (housing2$Bathrooms, horizontal = T, xlab="Number of Bathrooms", main="Boxplot of Bathrooms")
+
+```
+
+Skewed Right - do log transformation
+
+Log Transformation of Bathrooms
+```{r fig.height=3.5, fig.width=7.5}
+housing2$LogBathrooms = log(housing2$Bathrooms)
+
+par (mfrow = c(1, 2))
+
+hist (housing2$LogBathrooms, xlab="LogBathrooms", main="Histogram of LogBathrooms")
+boxplot (housing2$LogBathrooms, horizontal = T, xlab="Number of LogBathrooms", main="Boxplot of LogBathrooms")
+
+```
+
+The distribution is more Normal looking with only a few outliers in the boxplot.
+
+Bedrooms:
+```{r fig.height=3.5, fig.width=7.5}
+par (mfrow = c(1, 2))
+
+hist (housing2$Bedrooms, xlab="Number of Bedrooms", main="Histogram of Bedrooms")
+boxplot (housing2$Bedrooms, horizontal = T, xlab="Number of Bedrooms", main="Boxplot of Bedrooms")
+
+```
+
+Slightly skewed right. Try log transformation.
+
+Log Transformation of Bedrooms
+```{r fig.height=3.5, fig.width=7.5}
+housing2$LogBedrooms = log(housing2$Bedrooms)
+
+par (mfrow = c(1, 2))
+
+hist (housing2$LogBedrooms, xlab="LogBedrooms", main="Histogram of LogBedrooms")
+boxplot (housing2$LogBedrooms, horizontal = T, xlab="Number of LogBedrooms", main="Boxplot of LogBedrooms")
+
+```
+Looks better. Note: a natural log value equal to 0 means the original value is 1 (1 bedroom).
+
+Size:
+```{r fig.height=3.5, fig.width=7.5}
+par (mfrow = c(1, 2))
+
+hist (housing2$Size, xlab="Size of House", main="Histogram of Size")
+boxplot (housing2$Size, horizontal = T, xlab="Size of House", main="Boxplot of Size")
+
+```
+
+Very skewed to the right. Do log transformation.
+
+Log Transformation of Size
+```{r fig.height=3.5, fig.width=7.5}
+housing2$LogSize = log(housing2$Size)
+
+par (mfrow = c(1, 2))
+
+hist (housing2$LogSize, xlab="LogSize", main="Histogram of LogSize")
+boxplot (housing2$LogSize, horizontal = T, xlab="Number of LogSize", main="Boxplot of LogSize")
+
+```
+
+Get rid of outlier where log(size)=0.
+```{r}
+dim(housing2)
+housing2 = housing2[housing2$LogSize > 0, ]
+
+#Check data dimension
+dim(housing2)
+```
+
+Got rid of one value.
+
+Year Built:
+```{r fig.height=3.5, fig.width=7.5}
+par (mfrow = c(1, 2))
+
+hist (housing2$Year_Built, xlab="Year Built", main="Histogram of Year Built")
+boxplot (housing2$Year_Built, horizontal = T, xlab="Year Built", main="Boxplot of Year Built")
+
+```
+
+Slightly skewed left, but not too bad. We will leave this as is.
+
+
+# Model with Categorical Predictors
+
+```{r}
+housing2$Citycat = as.factor(housing2$City)
+housing2$Statecat = as.factor(housing2$State)
+
+
+fit3 = lm ((LogPrice) ~ LogSize + Bedrooms + Bathrooms + Year_Built + Lot_Size + Price_per_sqft + Population + Violent_Crime_Rate + Property_Crime_Rate + Citycat + Statecat,  data=housing2)
+summary (fit3)
+anova (fit3)
+```
+
+Adjusted R-squared: 0.644
+
+
+### Stepwise Regression
+
+Next, we apply stepwise regression to the full model (fit3) using the AIC criterion.  
+
+```{r}
+fit3aic = step (fit3, direction='both')
+
+summary(fit3aic)
+```
+
+Population, Property Crime Rate, and State are removed. We are left with Size, Violent Crime Rate, Lot Size, Year Built, Bedrooms, Bathrooms, Price per sqft, and City.
+
+
+Check the VIF factors:
+```{r}
+car::vif (fit3aic)
+```
+
+All of the VIF factors are less than 5 except for violent crime rate. This suggests multicolinearity.
+
+Summary of AIC model:
+```{r}
+summary(fit3aic)
+```
+
+The R-squared is 0.6436 and the residual standard error is 0.5604.
+
+Next we will apply stepwise regression with the BIC criterion.
+
+```{r}
+
+fit3BIC = step (fit3, direction="both", 
+                 k = log (fit3$rank + fit3$df.residual))
+
+summary (fit3BIC)
+```
+
+The BIC criterion removed the same 3 variables as the AIC criterion. The R-squared and residual standard error are the same as well.
+
+### Residual Analysis of Model
+
+```{r}
+par (mfrow = c(1, 2))
+plot (fit3aic)
+```
+
+Residual analysis shows problems with linearity, constant variance, and a Normal distribution.
+
+# Model 4 (Reduced):
+
+```{r}
+# Take out predictor variables that are correlated with another predictor
+# Used logged varibles
+housing2$LogLot_Size = log(housing2$Lot_Size)
+
+fit4 = lm (LogPrice ~ 
+             (LogSize + LogBedrooms + LogBathrooms + Year_Built + LogLot_Size + Citycat), data=housing2)
+
+summary (fit4)
+#VIFs
+car::vif (fit4)
+```
+
+### Stepwise
+
+Stepwise Regression for model 4 (AIC):
+```{r}
+# AIC
+fit4AIC = step (fit4, direction='both')
+summary(fit4AIC)
+```
+
+Nothing was removed. We are left with Size, Year Built, Lot Size, Bathrooms, and City.
+The R-squared is 0.5403.
+
+Try BIC:
+```{r}
+
+fit4BIC = step (fit4, direction="both", 
+                 k = log (fit4$rank + fit4$df.residual))
+
+summary (fit4BIC)
+```
+
+Again, no variables were removed. The R-squared is the same.
+
+# Centered Interactions Model
+
+Next, we will add all possible two-way interaction effects to the stepwise regression model obtained above using centered interactions.
+
+```{r}
+# Define centered variables
+housing2$Bathrooms.c = housing2$LogBathrooms - mean (housing2$LogBathrooms)
+housing2$Bedrooms.c = housing2$LogBedrooms - mean (housing2$LogBedrooms)
+housing2$Year_Built.c = housing2$Year_Built - mean (housing2$Year_Built)
+housing2$Lot_Size.c = housing2$LogLot_Size - mean (housing2$LogLot_Size)
+housing2$Size.c = housing2$LogSize - mean (housing2$LogSize)
+
+fit5 = lm (LogPrice ~ 
+             (Bathrooms.c + Bedrooms.c + Year_Built.c + Lot_Size.c + Size.c)^2, data=housing2)
+
+summary (fit5)
+```
+
+### Stepwise
+
+A stepwise regression will be used to remove the least significant predictors:
+
+AIC:
+```{r}
+fit5AIC = step (fit5, direction='both')
+summary (fit5AIC)
+```
+
+The interaction of bedrooms with lot size was removed. The rest of the interactions are significant.
+
+BIC:
+```{r}
+
+fit5BIC = step (fit5, direction="both", 
+                 k = log (fit5$rank + fit5$df.residual))
+
+summary (fit5BIC)
+```
+
+Using the BIC criterion, more of the interaction effects are removed. We are left with interactions between bathrooms and bedrooms, bathrooms and size, bedrooms and size, and year built and size. The adjusted R-squared is 0.3154.
+
+
+Check the VIF factors:
+```{r}
+car::vif (fit5BIC)
+```
+
+VIFs are less than 5, so good.
+
+We will continue on by using the model obtained from the BIC criterion above (fit5BIC).
+
+# Model with Significant Interactions
+
+```{r}
+# Add in city variable
+fit6 = lm (LogPrice ~ 
+             (Bathrooms.c + Bedrooms.c + Year_Built.c + Lot_Size.c + Size.c + Bathrooms.c:Bedrooms.c + Bathrooms.c:Size.c + Bedrooms.c:Size.c + Year_Built.c:Size.c + Citycat), data=housing2)
+
+summary (fit6)
+
+car::vif (fit6)
+```
+
+R-squared is 0.5699.
+All VIFs are less than 5.
+
+### Stepwise
+
+```{r}
+#AIC
+fit6AIC = step (fit6, direction='both')
+summary (fit6AIC)
+```
+
+Nothing was removed. We will try stepwise with the BIC criterion, which is stricter.
+
+BIC:
+```{r}
+fit6BIC = step (fit6, direction="both", 
+                 k = log (fit6$rank + fit6$df.residual))
+
+summary (fit6BIC)
+```
+
+The interaction between bedrooms and bathrooms was removed. This will be the final model.
+
+# Final Model
+
+```{r}
+fit7 = lm (LogPrice ~ 
+             (Bathrooms.c + Bedrooms.c + Year_Built.c + Lot_Size.c + Size.c + Bathrooms.c:Size.c + Bedrooms.c:Size.c + Year_Built.c:Size.c + Citycat), data=housing2)
+
+summary (fit7)
+anova(fit7)
+```
+
+Interpret Coefficients for variables not involved in interactions:
+-Lot Size: For each log square foot increase in log lot size, log price increases by 0.0356 log dollars. Or in other words, as lot size increases by 1%, price increases by about 3.56%.
+
+R-squared: 0.5698. These variables explain about 57% of the variation in Log(Price).
+Note: Bedrooms is not very significant on its own, but the interaction between bedrooms and size is very significant.
+
+Residual standard error: 0.6157.
+
+Interpret the Residual Standard Error:
+```{r}
+mean = mean(housing2$LogPrice)
+mean
+#We can divide this quantity by the mean of Y to obtain the average deviation in percent (which is useful because it will be independent of the units of measure of Y).
+
+avgdev = 0.6157/mean
+avgdev
+```
+
+The average deviation in actual vs predicted values is about 5%, which is not bad.
+
+
+#### Interaction Plots
+```{r}
+# plot the model.  Note: We can use the predict function to get predicted probabilities.
+
+library (ggplot2)
+
+# Save predicted values in the data frame
+housing2$predprice = predict (fit7)
+housing2$pihat.price = predict (fit7, type='response')
+
+#Predictions vs LogSize by resting LogBathrooms
+qplot (LogSize, predprice, data=housing2, color=LogBathrooms) + 
+  stat_summary(fun=mean, geom="line", aes(group = LogBathrooms))
+```
+
+The interaction plot shows that there is a positive trend between the predicted LogPrice and LogSize. Also as LogSize increases, so does the log number of Bathrooms.
+
+
+### Residual Analysis of Final Model
+
+```{r}
+par (mfrow = c(1, 2))
+plot (fit7, which=c(1,2))
+
+#boxplot
+boxplot (fit7$residuals, ylab="Final Model Residuals")
+```
+
+The residuals vs fitted plot show linearity, constant variance. The Normal Q-Q plot and the boxplot show that the residuals look Normal, but with some outliers.
+
+### Outliers
+
+```{r fig.height=3.5, fig.width=4}
+# Plot max heart rate vs predicted for fit 3
+# Row 137 could be a possible outlier as shown in the plot above
+
+plot (LogPrice ~ fit7$fitted.values, data=housing2)
+abline (0, 1)
+
+# Add prediction limits to previous plot
+
+fit7.pred = as.data.frame (predict (fit7, interval="prediction"))
+order2 = order (fit7.pred$fit)
+lines (fit7.pred$fit [order2], fit7.pred$lwr[order2], col='red')
+lines (fit7.pred$fit [order2], fit7.pred$upr[order2], col='red')
+```
+
+Here we can see the prediction limits over the fitted values from the final model. There seems to be some outliers on the low end of the plot.
+
+# Compare Linear Regression Model to Tree Regression Model
+
+For comparison to the final linear model, we fit a tree regression using log(Price). 
+
+```{r}
+library (rpart)
+tree1 = rpart (LogPrice ~ LogSize + LogBedrooms + LogBathrooms + Year_Built + LogLot_Size + Violent_Crime_Rate + Property_Crime_Rate + City, data = housing2, maxdepth=5)
+print (tree1$cptable)
+```
+
+Find the tree with the smallest xerror:
+
+```{r}
+opt1 = which.min (tree1$cptable [,"xerror"])
+opt1
+```
+
+The tree with the smallest xerror is Tree 10.
+
+
+Plot Log (Price) vs. predicted values and interpret the plot:
+```{r}
+plot (predict(tree1), log(housing2$LogPrice), main="Actual log(Price) vs Predicted")
+abline (0, 1, col='red')
+rsq1 = cor (predict(tree1), log(housing2$LogPrice))^2
+legend (13.5, 2.2, c(paste("Rsq=", round (rsq1, 2))), cex=0.8)
+```
+
+The R-squared for the tree regression model in 0.51, which is less than the R-squared for the linear regression model.
+
+
+Tree Regression Model with only the numerical data for visualization purposes:
+```{r}
+library (rpart)
+tree2 = rpart (LogPrice ~ LogSize + LogBedrooms + LogBathrooms + Year_Built + LogLot_Size + Violent_Crime_Rate + Property_Crime_Rate, data = housing2, maxdepth=5)
+```
+
+Plot and interpret the tree:
+
+```{r fig.height=4.5}
+par (mfrow=c(1,1))
+
+plot(tree2, uniform = TRUE, margin = 0.08, branch = 0.5, 
+     compress = TRUE)
+text(tree2)
+
+```
+
+We can see that Bathrooms is the most significant predictor. 
+
+Real Estate listings that cost the most are listings that have >= 0.7764 log bathrooms (2.17 bathrooms) and log size >= 8.541 (5,120.46 sq ft). This price is 14.33 log dollars (about 1.7 million dollars).
+
+Real Estate listings that cost the least are listings that have < 0.7764 log bathrooms (2.17 bathrooms) and a violent crime rate of >= 0.01457.
+
+
+Compare these Regression models to the models in Python. See Python Notebooks.
+
+
